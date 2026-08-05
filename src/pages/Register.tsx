@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,87 +16,73 @@ const Register = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // Check if user is already logged in
-  useEffect(() => {
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        // Sign out the user first
-        await supabase.auth.signOut();
-        console.log('Signed out existing session');
-      }
-    };
-    
-    checkSession();
-
-    // Setup auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('Auth state changed:', event, session);
-      if (event === 'SIGNED_IN' && session) {
-        // New users are always voters by default
-        toast({
-          title: "Registration successful!",
-          description: "Redirecting you to the elections page...",
-        });
-        navigate("/elections");
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [navigate, toast]);
-
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (password.length < 6) {
+      toast({
+        title: "Password is too short",
+        description: "Use at least 6 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
-      console.log('Starting registration process for:', email);
-      
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: normalizedEmail,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: window.location.origin,
         },
       });
 
-      console.log('Registration response:', { data, error });
-
       if (error) {
-        console.error('Supabase error:', error);
         throw error;
       }
 
-      if (data?.user) {
-        // Redirect will be handled by auth state change listener
+      if (!data.user || data.user.identities?.length === 0) {
+        throw new Error("This email is already registered");
+      }
+
+      if (data.session) {
         toast({
           title: "Registration successful!",
-          description: data.session ? "Logging you in..." : "Please check your email to verify your account.",
+          description: "Your account is ready.",
         });
-        
-        // If we have a session, the user is already logged in
-        if (!data.session) {
-          // Only redirect to login if email verification is required
-          setTimeout(() => navigate("/login"), 2000);
-        }
-      } else {
-        throw new Error('Registration failed - no user data returned');
+        navigate("/elections", { replace: true });
+        return;
       }
-    } catch (error: any) {
-      console.error('Registration error:', error);
-      
-      let errorMessage = "Registration failed";
-      
-      if (error.message.includes("already registered")) {
-        errorMessage = "This email is already registered";
-      } else if (error.message.includes("password")) {
-        errorMessage = "Password must be at least 6 characters";
-      } else if (error.message.includes("valid email")) {
-        errorMessage = "Please enter a valid email address";
-      }
-      
+
       toast({
-        title: "Error",
+        title: "Check your email",
+        description: "Open the confirmation link, then sign in.",
+      });
+      navigate("/login", { replace: true });
+    } catch (error: unknown) {
+      console.error('Registration error:', error);
+
+      const message = error instanceof Error ? error.message : "Unable to create your account";
+      const normalizedMessage = message.toLowerCase();
+      let errorMessage = message;
+
+      if (normalizedMessage.includes("already") || normalizedMessage.includes("exists")) {
+        errorMessage = "This email is already registered";
+      } else if (normalizedMessage.includes("password")) {
+        errorMessage = "Password does not meet the security requirements";
+      } else if (normalizedMessage.includes("email") && normalizedMessage.includes("invalid")) {
+        errorMessage = "Please enter a valid email address";
+      } else if (normalizedMessage.includes("rate limit")) {
+        errorMessage = "Too many attempts. Please wait a moment and try again";
+      } else if (normalizedMessage.includes("fetch") || normalizedMessage.includes("network")) {
+        errorMessage = "Unable to reach the registration service. Check your connection and try again";
+      }
+
+      toast({
+        title: "Registration failed",
         description: errorMessage,
         variant: "destructive",
       });
@@ -124,6 +110,7 @@ const Register = () => {
                 placeholder="m@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
                 required
               />
             </div>
@@ -134,6 +121,8 @@ const Register = () => {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+                minLength={6}
                 required
               />
             </div>
