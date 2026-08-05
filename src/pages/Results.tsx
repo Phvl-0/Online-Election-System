@@ -24,6 +24,7 @@ interface ElectionResult {
   endDate: string;
   totalVotes: number;
   results: VoteResult[];
+  status: string;
 }
 
 // Generate colors for the pie chart
@@ -34,6 +35,7 @@ const Results = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedView, setSelectedView] = useState<'bar' | 'pie'>('bar');
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -66,6 +68,14 @@ const Results = () => {
           console.log("Real-time vote update received:", payload);
           // Invalidate the query to refetch data when votes change
           queryClient.invalidateQueries({ queryKey: ['electionResults'] });
+          setLastUpdated(new Date());
+        }
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'elections' },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['electionResults'] });
+          setLastUpdated(new Date());
         }
       )
       .subscribe();
@@ -76,11 +86,11 @@ const Results = () => {
   }, [queryClient]);
 
   const fetchResults = async (): Promise<ElectionResult[]> => {
-    // Fetch completed elections
+    // Fetch both live (active) and completed elections so voters see live tallies
     const { data: elections, error: electionsError } = await supabase
       .from('elections')
       .select('*')
-      .eq('status', 'ended');
+      .in('status', ['active', 'ended']);
 
     if (electionsError) throw electionsError;
 
@@ -124,20 +134,22 @@ const Results = () => {
           id: election.id,
           title: election.title,
           endDate: election.end_date,
-          totalVotes: election.total_votes,
+          totalVotes: votes.length,
           results: candidateResults,
+          status: election.status,
         };
       })
     );
 
-    return results;
+    // Live elections first
+    return results.sort((a, b) => (a.status === 'ended' ? 1 : 0) - (b.status === 'ended' ? 1 : 0));
   };
 
   const { data: electionResults = [], isLoading, error } = useQuery({
     queryKey: ['electionResults'],
     queryFn: fetchResults,
     refetchOnWindowFocus: true,
-    refetchInterval: 30000, // Refetch every 30s as a fallback for real-time updates
+    refetchInterval: 5000, // Fallback polling so live tallies stay fresh
   });
 
   if (error) {
@@ -164,7 +176,12 @@ const Results = () => {
   return (
     <Layout>
       <div className="container mx-auto py-6">
-        <h1 className="text-3xl font-bold mb-6">Election Results</h1>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-3xl font-bold">Election Results</h1>
+          <p className="text-sm text-muted-foreground">
+            Live · updated {lastUpdated.toLocaleTimeString()}
+          </p>
+        </div>
         
         {isLoading ? (
           <div className="flex justify-center items-center h-64">
@@ -173,22 +190,32 @@ const Results = () => {
         ) : electionResults.length === 0 ? (
           <Card>
             <CardContent className="pt-6">
-              <p className="text-center text-gray-500">No completed elections to display results for.</p>
+              <p className="text-center text-gray-500">No elections with results to display yet.</p>
             </CardContent>
           </Card>
         ) : (
           <div className="grid gap-8">
             {electionResults.map((election) => {
               const winner = getWinner(election.results);
+              const isLive = election.status !== 'ended';
               
               return (
                 <Card key={election.id} className="overflow-hidden">
                   <CardHeader className="bg-muted/30">
                     <div className="flex justify-between items-start">
                       <div>
-                        <CardTitle className="text-2xl">{election.title}</CardTitle>
+                        <CardTitle className="text-2xl flex items-center gap-2">
+                          {election.title}
+                          {isLive && (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-semibold text-destructive">
+                              <span className="h-2 w-2 animate-pulse rounded-full bg-destructive" />
+                              LIVE
+                            </span>
+                          )}
+                        </CardTitle>
                         <p className="text-sm text-muted-foreground mt-1">
-                          Ended on {new Date(election.endDate).toLocaleDateString()}
+                          {isLive ? "Ends on " : "Ended on "}
+                          {new Date(election.endDate).toLocaleDateString()}
                         </p>
                       </div>
                       <div className="bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium">
@@ -198,17 +225,25 @@ const Results = () => {
                   </CardHeader>
                   
                   <CardContent className="pt-6">
-                    {winner && (
+                    {winner && election.totalVotes > 0 && (
                       <div className="mb-6 p-4 border rounded-lg bg-yellow-50/50 border-yellow-200">
                         <div className="flex items-center gap-4">
                           <div className="p-3 rounded-full bg-yellow-100">
                             <Award className="h-6 w-6 text-yellow-600" />
                           </div>
                           <div>
-                            <h3 className="font-bold text-lg">Winner: {winner.candidateName}</h3>
+                            <h3 className="font-bold text-lg">
+                              {isLive ? "Currently leading: " : "Winner: "}
+                              {winner.candidateName}
+                            </h3>
                             <p className="text-muted-foreground">
                               {winner.party} · {winner.voteCount} votes ({calculatePercentage(winner.voteCount, election.totalVotes)}%)
                             </p>
+                            {isLive && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Provisional — results update in real time until voting closes.
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -216,7 +251,9 @@ const Results = () => {
                     
                     <Tabs defaultValue="bar" className="w-full" onValueChange={(value) => setSelectedView(value as 'bar' | 'pie')}>
                       <div className="flex justify-between items-center mb-4">
-                        <h3 className="font-semibold text-lg">Voting Results</h3>
+                        <h3 className="font-semibold text-lg">
+                          {isLive ? "Live Voting Results" : "Voting Results"}
+                        </h3>
                         <TabsList>
                           <TabsTrigger value="bar">
                             <BarChart className="h-4 w-4 mr-2" />
