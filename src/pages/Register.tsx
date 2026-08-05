@@ -127,6 +127,9 @@ const Register = () => {
                 minLength={6}
                 required
               />
+              <p className="text-xs text-muted-foreground">
+                Must be at least 6 characters long.
+              </p>
             </div>
           </CardContent>
           <CardFooter className="flex flex-col space-y-4">
