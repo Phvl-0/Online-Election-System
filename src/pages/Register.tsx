@@ -67,12 +67,14 @@ const Register = () => {
 
       const message = error instanceof Error ? error.message : "Unable to create your account";
       const normalizedMessage = message.toLowerCase();
+      let errorTitle = "Registration failed";
       let errorMessage = message;
 
       if (normalizedMessage.includes("already") || normalizedMessage.includes("exists")) {
         errorMessage = "This email is already registered";
       } else if (normalizedMessage.includes("password")) {
-        errorMessage = "Password does not meet the security requirements";
+        errorTitle = "Password is too short";
+        errorMessage = "Please enter a longer password with at least 6 characters.";
       } else if (normalizedMessage.includes("email") && normalizedMessage.includes("invalid")) {
         errorMessage = "Please enter a valid email address";
       } else if (normalizedMessage.includes("rate limit")) {
@@ -82,7 +84,7 @@ const Register = () => {
       }
 
       toast({
-        title: "Registration failed",
+        title: errorTitle,
         description: errorMessage,
         variant: "destructive",
       });
@@ -125,6 +127,9 @@ const Register = () => {
                 minLength={6}
                 required
               />
+              <p className="text-xs text-muted-foreground">
+                Must be at least 6 characters long.
+              </p>
             </div>
           </CardContent>
           <CardFooter className="flex flex-col space-y-4">
