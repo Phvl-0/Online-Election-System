@@ -2,6 +2,7 @@ stages:
   - analyze
   - build
   - test
+  - security
 
 lint:
   stage: analyze
@@ -30,3 +31,25 @@ unit-tests:
   stage: test
   script:
     - npm test
+
+dependency-audit:
+  stage: security
+  script:
+    - npm audit --omit=dev > audit-report.txt 2>&1 || true
+    - cat audit-report.txt
+    - npm audit --omit=dev --audit-level=critical
+  artifacts:
+    when: always
+    paths:
+      - audit-report.txt
+
+secret-scan:
+  stage: security
+  script:
+    - |
+      if git grep -nIE -e '-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|glpat-[A-Za-z0-9_-]{20}|sk_live_[A-Za-z0-9]+' -- . ':!.gitlab-ci.yml' ':!package-lock.json'; then
+        echo "Possible secret found. Failing the job."
+        exit 1
+      else
+        echo "No secrets matched the patterns."
+      fi
