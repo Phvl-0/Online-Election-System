@@ -3,6 +3,7 @@ stages:
   - build
   - test
   - security
+  - deploy
 
 lint:
   stage: analyze
@@ -53,3 +54,13 @@ secret-scan:
       else
         echo "No secrets matched the patterns."
       fi
+
+deploy:
+  stage: deploy
+  rules:
+    - if: $CI_COMMIT_BRANCH == "devsecops-pipeline"
+  script:
+    - find /var/www/election -mindepth 1 -delete
+    - cp -a dist/. /var/www/election/
+    - ls -l /var/www/election
+    - curl -skfI https://localhost/
