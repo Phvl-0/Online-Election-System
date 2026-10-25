@@ -1,0 +1,32 @@
+stages:
+  - analyze
+  - build
+  - test
+
+lint:
+  stage: analyze
+  allow_failure: true
+  script:
+    - npm ci --prefer-offline --no-audit
+    - npm run lint -- --output-file lint-report.txt || LINT_STATUS=$?
+    - cat lint-report.txt
+    - exit ${LINT_STATUS:-0}
+  artifacts:
+    when: always
+    paths:
+      - lint-report.txt
+
+build:
+  stage: build
+  script:
+    - npm ci --prefer-offline --no-audit
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+
+unit-tests:
+  stage: test
+  script:
+    - npm test
