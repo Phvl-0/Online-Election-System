@@ -2,8 +2,8 @@ name: Supabase Keepalive Ping
 
 on:
   schedule:
-    # Runs automatically every 10 minutes
-    - cron: "*/10 * * * *"
+    # Runs automatically once a day (free Supabase projects pause after 7 days without database requests)
+    - cron: "23 5 * * *"
   # Gives us the manual "Run workflow" button
   workflow_dispatch:
 
