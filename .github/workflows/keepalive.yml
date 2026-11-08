@@ -2,9 +2,7 @@ name: Supabase Keepalive Ping
 
 on:
   schedule:
-    # Runs automatically once a day (free Supabase projects pause after 7 days without database requests)
-    - cron: "23 5 * * *"
-  # Gives us the manual "Run workflow" button
+    - cron: "17 5,13,21 * * *"
   workflow_dispatch:
 
 jobs:
@@ -19,8 +17,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Target public.profiles table found by Supabase AI
-          curl -fsS "${SUPABASE_URL}/rest/v1/profiles?select=id&limit=1" \
+          curl -fsS \
+            --connect-timeout 10 \
+            --max-time 30 \
+            --retry 2 \
+            --retry-all-errors \
+            "${SUPABASE_URL}/rest/v1/profiles?select=id&limit=1" \
             -H "apikey: ${SUPABASE_ANON_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
             -H "Accept: application/json"
